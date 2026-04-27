@@ -16,7 +16,7 @@ CORS(app)
 SEED_PATH    = Path(__file__).parent.parent / "TamilEvents" / "TamilEvents" / "Resources" / "SeedData.json"
 ADMIN_PATH   = Path(__file__).parent / "admin_events.json"
 PENDING_PATH = Path(__file__).parent / "pending_events.json"
-ADMIN_KEY    = os.getenv("ADMIN_KEY", "tamilevents-admin-2026")
+ADMIN_KEY    = os.getenv("ADMIN_KEY", "")
 
 
 # ── Storage helpers ────────────────────────────────────────────────────────────
