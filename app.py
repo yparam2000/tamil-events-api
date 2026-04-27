@@ -3,9 +3,11 @@ import os
 import uuid
 from pathlib import Path
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, abort, render_template, redirect, url_for
 from flask_cors import CORS
+from digest import send_digest
 
 
 load_dotenv()
@@ -213,6 +215,26 @@ def admin_delete(event_id):
     save_admin_events(updated)
 
     return redirect(f"/admin?key={key}&msg=Event+deleted.")
+
+
+@app.route("/admin/send-digest", methods=["POST"])
+def admin_send_digest():
+    key = request.form.get("admin_key", "")
+    if key != ADMIN_KEY:
+        abort(401)
+    ok, msg = send_digest()
+    status  = "success" if ok else "error"
+    return redirect(f"/admin?key={key}&msg={msg.replace(' ', '+')}&digest={status}")
+
+
+# ── Daily scheduler ────────────────────────────────────────────────────────────
+
+def _scheduled_digest():
+    send_digest()
+
+scheduler = BackgroundScheduler(timezone="UTC")
+scheduler.add_job(_scheduled_digest, "cron", hour=8, minute=0)  # 8am UTC daily
+scheduler.start()
 
 
 if __name__ == "__main__":
