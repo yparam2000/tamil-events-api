@@ -254,9 +254,12 @@ def admin_send_digest():
 def _scheduled_digest():
     send_digest()
 
-scheduler = BackgroundScheduler(timezone="UTC")
-scheduler.add_job(_scheduled_digest, "cron", hour=8, minute=0)  # 8am UTC daily
-scheduler.start()
+try:
+    scheduler = BackgroundScheduler(timezone="UTC")
+    scheduler.add_job(_scheduled_digest, "cron", hour=8, minute=0)
+    scheduler.start()
+except Exception:
+    pass
 
 
 if __name__ == "__main__":
