@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request, abort, render_template, redirect, url_for
 from flask_cors import CORS
 
-from scrapers.eventbrite import fetch_events as fetch_eventbrite
 
 load_dotenv()
 
@@ -60,8 +59,7 @@ def deduplicate(events):
 
 @app.route("/events", methods=["GET"])
 def events():
-    all_events  = load_admin_events()
-    all_events += fetch_eventbrite()
+    all_events = load_admin_events()
 
     if not all_events:
         all_events = load_seed()
