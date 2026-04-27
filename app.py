@@ -217,6 +217,28 @@ def admin_delete(event_id):
     return redirect(f"/admin?key={key}&msg=Event+deleted.")
 
 
+@app.route("/admin/test-email")
+def test_email():
+    import smtplib, os
+    user = os.getenv("GMAIL_USER", "")
+    pwd  = os.getenv("GMAIL_APP_PASSWORD", "")
+    result = {
+        "gmail_user_set":     bool(user),
+        "gmail_user":         user,
+        "password_set":       bool(pwd),
+        "password_length":    len(pwd),
+    }
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+            s.login(user, pwd)
+            result["login"] = "SUCCESS"
+    except smtplib.SMTPAuthenticationError as e:
+        result["login"] = f"AUTH FAILED: {e}"
+    except Exception as e:
+        result["login"] = f"ERROR: {e}"
+    return jsonify(result)
+
+
 @app.route("/admin/send-digest", methods=["POST"])
 def admin_send_digest():
     key = request.form.get("admin_key", "")
