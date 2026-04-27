@@ -9,100 +9,153 @@ DIGEST_TO      = os.getenv("DIGEST_EMAIL", "tamilevents00@gmail.com")
 ADMIN_KEY      = os.getenv("ADMIN_KEY", "")
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/120.0.0.0 Safari/537.36",
+                  "Chrome/124.0.0.0 Safari/537.36",
+    "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection":      "keep-alive",
 }
 
-# Known Tamil event websites to check directly
-TAMIL_SITES = [
-    {
-        "name":     "Tamil Culture",
-        "url":      "https://www.tamilculture.ca/events",
-        "selectors": ["h2 a", "h3 a", ".tribe-event-url", ".entry-title a"],
-    },
-    {
-        "name":     "Tamil Events UK",
-        "url":      "https://www.tamilevents.co.uk",
-        "selectors": ["h2 a", "h3 a", ".event-title a", "article h2"],
-    },
-    {
-        "name":     "Sangam.org",
-        "url":      "https://www.sangam.org/events",
-        "selectors": ["h2 a", "h3 a", ".event a"],
-    },
-    {
-        "name":     "Tamil Guardian Events",
-        "url":      "https://www.tamilguardian.com/category/culture",
-        "selectors": ["h2 a", "h3 a", ".post-title a"],
-    },
-    {
-        "name":     "Ilankai Tamil Events",
-        "url":      "https://www.ilangaitamilsangam.com/events",
-        "selectors": ["h2 a", "h3 a", ".tribe-event a"],
-    },
+# Eventbrite city slugs for Tamil diaspora cities
+EVENTBRITE_SEARCHES = [
+    ("Toronto",   "canada--toronto"),
+    ("London",    "united-kingdom--london"),
+    ("Sydney",    "australia--sydney"),
+    ("Melbourne", "australia--melbourne"),
+    ("Singapore", "singapore--singapore"),
+    ("Dubai",     "united-arab-emirates--dubai"),
+    ("Kuala Lumpur", "malaysia--kuala-lumpur"),
+    ("Chennai",   "india--chennai"),
 ]
 
-# Bing search — more bot-friendly than DuckDuckGo
-SEARCH_QUERIES = [
-    "tamil cultural events 2026",
-    "bharatanatyam carnatic concert 2026",
-    "tamil food festival 2026",
-    "kollywood dance show 2026",
+EVENTBRITE_KEYWORDS = ["tamil", "bharatanatyam", "carnatic", "kollywood", "diwali", "pongal"]
+
+# Allevents.in city slugs
+ALLEVENTS_CITIES = [
+    ("Toronto",      "toronto"),
+    ("London",       "london"),
+    ("Sydney",       "sydney"),
+    ("Singapore",    "singapore"),
+    ("Kuala Lumpur", "kuala-lumpur"),
+    ("Dubai",        "dubai"),
+    ("Melbourne",    "melbourne"),
 ]
 
 
-def _bing_search(query: str) -> list[dict]:
+def _eventbrite_city(city_label: str, city_slug: str) -> list[dict]:
+    """Scrape Eventbrite's public search page for Tamil events in a city."""
+    results = []
+    seen    = set()
+    for kw in EVENTBRITE_KEYWORDS[:3]:
+        url = f"https://www.eventbrite.com/d/{city_slug}/{kw}--events/"
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=14)
+            if resp.status_code != 200:
+                continue
+            soup = BeautifulSoup(resp.text, "html.parser")
+            # Eventbrite renders event cards with these selectors
+            for el in soup.select("h3.eds-event-card__formatted-name--is-clamped, "
+                                  "h3.Typography_root__487rx, "
+                                  "div[data-testid='event-card'] h3, "
+                                  "article h3")[:8]:
+                title = el.get_text(strip=True)
+                if len(title) < 8 or title.lower() in seen:
+                    continue
+                seen.add(title.lower())
+                # Try to find the parent link
+                parent = el.find_parent("a") or el.find_parent("article")
+                href = parent.get("href", url) if parent else url
+                if href and not href.startswith("http"):
+                    href = "https://www.eventbrite.com" + href
+                results.append({
+                    "title":   title,
+                    "url":     href or url,
+                    "snippet": city_label,
+                    "source":  f"Eventbrite {city_label}",
+                })
+        except Exception:
+            continue
+    return results
+
+
+def _allevents_city(city_label: str, city_slug: str) -> list[dict]:
+    """Scrape allevents.in for Tamil events in a city."""
+    url = f"https://allevents.in/{city_slug}/tamil"
     try:
-        resp = requests.get(
-            "https://www.bing.com/search",
-            params={"q": query, "count": "8"},
-            headers=HEADERS,
-            timeout=12,
-        )
+        resp = requests.get(url, headers=HEADERS, timeout=14)
+        if resp.status_code != 200:
+            return []
         soup = BeautifulSoup(resp.text, "html.parser")
         results = []
-        for r in soup.select("li.b_algo")[:5]:
-            title_el = r.select_one("h2 a")
-            snippet  = r.select_one(".b_caption p")
-            if not title_el:
+        seen    = set()
+        for el in soup.select("h3.event-title, .event-title a, li.item h3, "
+                              ".event-name, h2.title a, .title a")[:10]:
+            title = el.get_text(strip=True)
+            if len(title) < 8 or title.lower() in seen:
                 continue
-            title = title_el.get_text(strip=True)
-            if len(title) < 8:
-                continue
+            seen.add(title.lower())
+            link = el if el.name == "a" else el.find("a")
+            href = link.get("href", url) if link else url
             results.append({
                 "title":   title,
-                "url":     title_el.get("href", ""),
-                "snippet": snippet.get_text(strip=True) if snippet else "",
-                "source":  "Bing search",
+                "url":     href if href.startswith("http") else url,
+                "snippet": city_label,
+                "source":  f"AllEvents {city_label}",
             })
         return results
     except Exception:
         return []
 
 
-def _scrape_site(site: dict) -> list[dict]:
+def _tamilculture_ca() -> list[dict]:
+    """Tamil Culture Canada — server-side rendered WordPress."""
     try:
-        resp = requests.get(site["url"], headers=HEADERS, timeout=12)
+        resp = requests.get("https://www.tamilculture.ca/events", headers=HEADERS, timeout=14)
         if resp.status_code != 200:
             return []
         soup = BeautifulSoup(resp.text, "html.parser")
         results = []
-        seen = set()
-        for sel in site["selectors"]:
-            for el in soup.select(sel)[:6]:
-                title = el.get_text(strip=True)
-                href  = el.get("href", site["url"])
-                if len(title) < 8 or title.lower() in seen:
-                    continue
-                seen.add(title.lower())
-                results.append({
-                    "title":   title,
-                    "url":     href if href.startswith("http") else site["url"],
-                    "snippet": "",
-                    "source":  site["name"],
-                })
+        seen    = set()
+        for el in soup.select(".tribe-event-url, .entry-title a, h2 a, h3 a")[:12]:
+            title = el.get_text(strip=True)
+            href  = el.get("href", "")
+            if len(title) < 8 or title.lower() in seen:
+                continue
+            seen.add(title.lower())
+            results.append({
+                "title":   title,
+                "url":     href if href.startswith("http") else "https://www.tamilculture.ca/events",
+                "snippet": "Canada",
+                "source":  "TamilCulture.ca",
+            })
+        return results
+    except Exception:
+        return []
+
+
+def _tamilevents_uk() -> list[dict]:
+    """Tamil Events UK."""
+    try:
+        resp = requests.get("https://www.tamilevents.co.uk", headers=HEADERS, timeout=14)
+        if resp.status_code != 200:
+            return []
+        soup = BeautifulSoup(resp.text, "html.parser")
+        results = []
+        seen    = set()
+        for el in soup.select("h2 a, h3 a, .event-title a, article h2 a")[:12]:
+            title = el.get_text(strip=True)
+            href  = el.get("href", "")
+            if len(title) < 8 or title.lower() in seen:
+                continue
+            seen.add(title.lower())
+            results.append({
+                "title":   title,
+                "url":     href if href.startswith("http") else "https://www.tamilevents.co.uk",
+                "snippet": "UK",
+                "source":  "TamilEvents UK",
+            })
         return results
     except Exception:
         return []
@@ -112,23 +165,26 @@ def gather_events() -> list[dict]:
     found = []
     seen  = set()
 
-    # 1. Bing search
-    for q in SEARCH_QUERIES:
-        for r in _bing_search(q):
-            key = r["title"].lower()[:50]
+    def _add(items):
+        for r in items:
+            key = r["title"].lower()[:60]
             if key not in seen:
                 seen.add(key)
                 found.append(r)
 
-    # 2. Direct Tamil sites
-    for site in TAMIL_SITES:
-        for r in _scrape_site(site):
-            key = r["title"].lower()[:50]
-            if key not in seen:
-                seen.add(key)
-                found.append(r)
+    # 1. Eventbrite per city
+    for city_label, city_slug in EVENTBRITE_SEARCHES:
+        _add(_eventbrite_city(city_label, city_slug))
 
-    return found[:35]
+    # 2. AllEvents.in per city
+    for city_label, city_slug in ALLEVENTS_CITIES:
+        _add(_allevents_city(city_label, city_slug))
+
+    # 3. Tamil-specific sites
+    _add(_tamilculture_ca())
+    _add(_tamilevents_uk())
+
+    return found[:40]
 
 
 def _build_html(events: list[dict], admin_url: str) -> str:
