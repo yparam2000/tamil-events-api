@@ -7,11 +7,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request, abort, render_template, redirect, url_for
 from flask_cors import CORS
 
-from scrapers.eventbrite      import fetch_events as fetch_eventbrite
-from scrapers.tamil_culture   import fetch_events as fetch_tamil_culture
-from scrapers.tamil_events_uk import fetch_events as fetch_uk
-from scrapers.sangam          import fetch_events as fetch_sangam
-from scrapers.facebook        import fetch_events as fetch_facebook
+from scrapers.eventbrite import fetch_events as fetch_eventbrite
 
 load_dotenv()
 
@@ -66,10 +62,6 @@ def deduplicate(events):
 def events():
     all_events  = load_admin_events()
     all_events += fetch_eventbrite()
-    all_events += fetch_tamil_culture()
-    all_events += fetch_uk()
-    all_events += fetch_sangam()
-    all_events += fetch_facebook()
 
     if not all_events:
         all_events = load_seed()
