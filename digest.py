@@ -1,13 +1,10 @@
 import os
-import smtplib
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
-GMAIL_USER     = os.getenv("GMAIL_USER", "tamilevents00@gmail.com")
-GMAIL_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+DIGEST_FROM    = os.getenv("DIGEST_FROM", "Tamil Events <onboarding@resend.dev>")
 DIGEST_TO      = os.getenv("DIGEST_EMAIL", "tamilevents00@gmail.com")
 ADMIN_KEY      = os.getenv("ADMIN_KEY", "")
 
@@ -205,52 +202,31 @@ def _build_html(events: list[dict], admin_url: str) -> str:
 
 
 def send_digest() -> tuple[bool, str]:
-    if not GMAIL_PASSWORD:
-        return False, "GMAIL_APP_PASSWORD not set in environment variables"
+    if not RESEND_API_KEY:
+        return False, "RESEND_API_KEY not set in environment variables"
 
     admin_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", "web-production-13ce5.up.railway.app")
     events    = gather_events()
     month     = datetime.now().strftime("%B %Y")
     subject   = f"🎭 Tamil Events Digest — {month} ({len(events)} found)"
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = GMAIL_USER
-    msg["To"]      = DIGEST_TO
-    msg.attach(MIMEText(_build_html(events, admin_url), "html"))
-
-    # Try port 587 (STARTTLS) first — Railway often blocks 465
-    for attempt in [("587/STARTTLS", _send_587), ("465/SSL", _send_465)]:
-        label, fn = attempt
-        ok, err = fn(GMAIL_USER, GMAIL_PASSWORD, DIGEST_TO, msg)
-        if ok:
-            return True, f"Digest sent via {label} — {len(events)} events found"
-        last_err = f"{label}: {err}"
-    return False, last_err
-
-
-def _send_587(user, pwd, to, msg):
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as s:
-            s.ehlo()
-            s.starttls()
-            s.ehlo()
-            s.login(user, pwd)
-            s.sendmail(user, to, msg.as_string())
-        return True, ""
-    except smtplib.SMTPAuthenticationError as e:
-        return False, f"AUTH FAILED: {e}"
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type":  "application/json",
+            },
+            json={
+                "from":    DIGEST_FROM,
+                "to":      [DIGEST_TO],
+                "subject": subject,
+                "html":    _build_html(events, admin_url),
+            },
+            timeout=20,
+        )
+        if resp.status_code in (200, 201):
+            return True, f"Digest sent — {len(events)} events found"
+        return False, f"Resend API error {resp.status_code}: {resp.text}"
     except Exception as e:
-        return False, str(e)
-
-
-def _send_465(user, pwd, to, msg):
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as s:
-            s.login(user, pwd)
-            s.sendmail(user, to, msg.as_string())
-        return True, ""
-    except smtplib.SMTPAuthenticationError as e:
-        return False, f"AUTH FAILED: {e}"
-    except Exception as e:
-        return False, str(e)
+        return False, f"Send failed: {str(e)}"

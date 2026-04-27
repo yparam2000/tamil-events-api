@@ -219,37 +219,28 @@ def admin_delete(event_id):
 
 @app.route("/admin/test-email")
 def test_email():
-    import smtplib, os
-    user = os.getenv("GMAIL_USER", "")
-    pwd  = os.getenv("GMAIL_APP_PASSWORD", "")
-    result = {
-        "gmail_user_set":     bool(user),
-        "gmail_user":         user,
-        "password_set":       bool(pwd),
-        "password_length":    len(pwd),
-    }
-    # Try port 587 (STARTTLS) — Railway often blocks 465
+    import requests as req
+    api_key = os.getenv("RESEND_API_KEY", "")
+    result  = {"resend_key_set": bool(api_key), "resend_key_length": len(api_key)}
+    if not api_key:
+        result["status"] = "RESEND_API_KEY not set"
+        return jsonify(result)
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as s:
-            s.ehlo()
-            s.starttls()
-            s.ehlo()
-            s.login(user, pwd)
-            result["login"] = "SUCCESS (587/STARTTLS)"
-            return jsonify(result)
-    except smtplib.SMTPAuthenticationError as e:
-        result["port587"] = f"AUTH FAILED: {e}"
+        resp = req.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "from":    "Tamil Events <onboarding@resend.dev>",
+                "to":      ["tamilevents00@gmail.com"],
+                "subject": "Tamil Events — test email",
+                "html":    "<p>Test from Tamil Events backend. Email is working!</p>",
+            },
+            timeout=15,
+        )
+        result["http_status"] = resp.status_code
+        result["status"] = "SUCCESS" if resp.status_code in (200, 201) else f"FAILED: {resp.text}"
     except Exception as e:
-        result["port587"] = f"ERROR: {e}"
-    # Fallback: try port 465 (SSL)
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as s:
-            s.login(user, pwd)
-            result["login"] = "SUCCESS (465/SSL)"
-    except smtplib.SMTPAuthenticationError as e:
-        result["login"] = f"AUTH FAILED: {e}"
-    except Exception as e:
-        result["login"] = f"ERROR: {e}"
+        result["status"] = f"ERROR: {e}"
     return jsonify(result)
 
 
