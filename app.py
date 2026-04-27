@@ -18,9 +18,10 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-SEED_PATH   = Path(__file__).parent.parent / "TamilEvents" / "TamilEvents" / "Resources" / "SeedData.json"
-ADMIN_PATH  = Path(__file__).parent / "admin_events.json"
-ADMIN_KEY   = os.getenv("ADMIN_KEY", "tamilevents-admin-2026")
+SEED_PATH    = Path(__file__).parent.parent / "TamilEvents" / "TamilEvents" / "Resources" / "SeedData.json"
+ADMIN_PATH   = Path(__file__).parent / "admin_events.json"
+PENDING_PATH = Path(__file__).parent / "pending_events.json"
+ADMIN_KEY    = os.getenv("ADMIN_KEY", "tamilevents-admin-2026")
 
 
 # ── Storage helpers ────────────────────────────────────────────────────────────
@@ -39,6 +40,15 @@ def load_admin_events():
 
 def save_admin_events(events):
     ADMIN_PATH.write_text(json.dumps(events, indent=2))
+
+def load_pending():
+    try:
+        return json.loads(PENDING_PATH.read_text())
+    except Exception:
+        return []
+
+def save_pending(events):
+    PENDING_PATH.write_text(json.dumps(events, indent=2))
 
 def deduplicate(events):
     seen, unique = set(), []
@@ -72,6 +82,72 @@ def health():
     return jsonify({"status": "ok"})
 
 
+# ── User event submission ──────────────────────────────────────────────────────
+
+@app.route("/submit", methods=["POST"])
+def user_submit():
+    data = request.get_json(silent=True)
+    if not data or not data.get("title") or not data.get("date"):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    pending = load_pending()
+    pending.append({
+        "id":          str(uuid.uuid4()),
+        "title":       data.get("title", ""),
+        "description": data.get("description", ""),
+        "date":        data.get("date", ""),
+        "time":        data.get("time", ""),
+        "city":        data.get("city", ""),
+        "country":     data.get("country", ""),
+        "location":    data.get("location", ""),
+        "address":     "",
+        "image":       "",
+        "url":         "",
+        "category":    data.get("category", "Cultural"),
+        "source":      "user_submission",
+        "is_free":     False,
+        "organizer":   data.get("organizer", ""),
+        "contact":     data.get("contact", ""),
+        "status":      "pending",
+    })
+    save_pending(pending)
+    return jsonify({"status": "received"}), 200
+
+
+@app.route("/admin/approve/<event_id>", methods=["POST"])
+def admin_approve(event_id):
+    key = request.form.get("admin_key", "")
+    if key != ADMIN_KEY:
+        abort(401)
+
+    pending = load_pending()
+    match   = next((e for e in pending if e["id"] == event_id), None)
+    if not match:
+        abort(404)
+
+    match.pop("contact", None)
+    match.pop("status",  None)
+    match["source"] = "admin"
+
+    events = load_admin_events()
+    events.append(match)
+    save_admin_events(events)
+    save_pending([e for e in pending if e["id"] != event_id])
+
+    return redirect(f"/admin?key={key}&msg=Event+approved+and+published!")
+
+
+@app.route("/admin/reject/<event_id>", methods=["POST"])
+def admin_reject(event_id):
+    key = request.form.get("admin_key", "")
+    if key != ADMIN_KEY:
+        abort(401)
+
+    pending = load_pending()
+    save_pending([e for e in pending if e["id"] != event_id])
+    return redirect(f"/admin?key={key}&msg=Submission+rejected.")
+
+
 # ── Admin web panel ────────────────────────────────────────────────────────────
 
 @app.route("/admin")
@@ -91,6 +167,7 @@ def admin_panel():
 
     return render_template("admin.html",
                            events=load_admin_events(),
+                           pending=load_pending(),
                            admin_key=key,
                            message=request.args.get("msg"))
 
