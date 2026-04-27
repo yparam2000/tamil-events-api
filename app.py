@@ -228,10 +228,24 @@ def test_email():
         "password_set":       bool(pwd),
         "password_length":    len(pwd),
     }
+    # Try port 587 (STARTTLS) — Railway often blocks 465
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as s:
+            s.ehlo()
+            s.starttls()
+            s.ehlo()
             s.login(user, pwd)
-            result["login"] = "SUCCESS"
+            result["login"] = "SUCCESS (587/STARTTLS)"
+            return jsonify(result)
+    except smtplib.SMTPAuthenticationError as e:
+        result["port587"] = f"AUTH FAILED: {e}"
+    except Exception as e:
+        result["port587"] = f"ERROR: {e}"
+    # Fallback: try port 465 (SSL)
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as s:
+            s.login(user, pwd)
+            result["login"] = "SUCCESS (465/SSL)"
     except smtplib.SMTPAuthenticationError as e:
         result["login"] = f"AUTH FAILED: {e}"
     except Exception as e:

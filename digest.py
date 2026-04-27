@@ -219,12 +219,38 @@ def send_digest() -> tuple[bool, str]:
     msg["To"]      = DIGEST_TO
     msg.attach(MIMEText(_build_html(events, admin_url), "html"))
 
+    # Try port 587 (STARTTLS) first — Railway often blocks 465
+    for attempt in [("587/STARTTLS", _send_587), ("465/SSL", _send_465)]:
+        label, fn = attempt
+        ok, err = fn(GMAIL_USER, GMAIL_PASSWORD, DIGEST_TO, msg)
+        if ok:
+            return True, f"Digest sent via {label} — {len(events)} events found"
+        last_err = f"{label}: {err}"
+    return False, last_err
+
+
+def _send_587(user, pwd, to, msg):
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_USER, GMAIL_PASSWORD)
-            server.sendmail(GMAIL_USER, DIGEST_TO, msg.as_string())
-        return True, f"Digest sent — {len(events)} events found"
-    except smtplib.SMTPAuthenticationError:
-        return False, "Gmail authentication failed — check GMAIL_APP_PASSWORD is correct"
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as s:
+            s.ehlo()
+            s.starttls()
+            s.ehlo()
+            s.login(user, pwd)
+            s.sendmail(user, to, msg.as_string())
+        return True, ""
+    except smtplib.SMTPAuthenticationError as e:
+        return False, f"AUTH FAILED: {e}"
     except Exception as e:
-        return False, f"Send failed: {str(e)}"
+        return False, str(e)
+
+
+def _send_465(user, pwd, to, msg):
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as s:
+            s.login(user, pwd)
+            s.sendmail(user, to, msg.as_string())
+        return True, ""
+    except smtplib.SMTPAuthenticationError as e:
+        return False, f"AUTH FAILED: {e}"
+    except Exception as e:
+        return False, str(e)
