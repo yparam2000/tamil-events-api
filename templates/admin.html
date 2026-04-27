@@ -144,9 +144,44 @@
       font-size: 14px;
     }
 
+    /* ── Image picker ── */
+    .img-group-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #6e6e73;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 12px 0 6px;
+    }
+    .img-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pick-img {
+      width: 100px;
+      height: 70px;
+      object-fit: cover;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 3px solid transparent;
+      transition: border-color 0.15s, transform 0.15s, opacity 0.15s;
+      opacity: 0.85;
+    }
+    .pick-img:hover {
+      opacity: 1;
+      transform: scale(1.04);
+    }
+    .pick-img.selected {
+      border-color: #7233CC;
+      opacity: 1;
+      transform: scale(1.06);
+    }
+
     @media (max-width: 600px) {
       .grid { grid-template-columns: 1fr; }
       table { font-size: 12px; }
+      .pick-img { width: 80px; height: 56px; }
     }
   </style>
 </head>
@@ -218,9 +253,53 @@
           <input type="text" name="address" placeholder="e.g. 150 Borough Dr, Toronto"/>
         </div>
 
-        <div>
-          <label>Image URL</label>
-          <input type="url" name="image" placeholder="https://..."/>
+        <div class="full">
+          <label>Event Image</label>
+          <input type="url" name="image" id="imageInput" placeholder="https://... or pick one below"/>
+          <div id="imagePreviewWrap" style="display:none;margin-top:10px">
+            <img id="imagePreview" src="" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:2px solid #7233CC"/>
+          </div>
+          <div style="margin-top:12px">
+            <p style="font-size:12px;font-weight:600;color:#6e6e73;margin-bottom:8px">— OR PICK FROM LIBRARY —</p>
+            <div class="img-grid" id="imgGrid">
+              <!-- Cultural -->
+              <div class="img-group-label">🌐 Cultural</div>
+              <div class="img-row">
+                <img class="pick-img" src="https://images.unsplash.com/photo-1604928141064-207cea6f571f?w=200&q=70" data-url="https://images.unsplash.com/photo-1604928141064-207cea6f571f?auto=format&fit=crop&w=800&q=80" title="Festival Lights"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1518611012118-696072aa579a?w=200&q=70" data-url="https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=800&q=80" title="Bharatanatyam Dance"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?w=200&q=70" data-url="https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?auto=format&fit=crop&w=800&q=80" title="Tamil New Year"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1547153760-18fc86324498?w=200&q=70" data-url="https://images.unsplash.com/photo-1547153760-18fc86324498?auto=format&fit=crop&w=800&q=80" title="Classical Dance"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1567431455575-34e27b6cf6a5?w=200&q=70" data-url="https://images.unsplash.com/photo-1567431455575-34e27b6cf6a5?auto=format&fit=crop&w=800&q=80" title="Indian Dance Performance"/>
+              </div>
+              <!-- Entertainment -->
+              <div class="img-group-label">🎬 Entertainment</div>
+              <div class="img-row">
+                <img class="pick-img" src="https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=200&q=70" data-url="https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?auto=format&fit=crop&w=800&q=80" title="Music Concert"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?w=200&q=70" data-url="https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=800&q=80" title="Live Music"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=200&q=70" data-url="https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80" title="Cinema / Film Night"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1516321497487-e288fb19713f?w=200&q=70" data-url="https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=800&q=80" title="Stage Performance"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&q=70" data-url="https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=800&q=80" title="DJ / Nightlife"/>
+              </div>
+              <!-- Food -->
+              <div class="img-group-label">🍴 Food</div>
+              <div class="img-row">
+                <img class="pick-img" src="https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=200&q=70" data-url="https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=800&q=80" title="South Indian Curry"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1567521464027-f127ff144326?w=200&q=70" data-url="https://images.unsplash.com/photo-1567521464027-f127ff144326?auto=format&fit=crop&w=800&q=80" title="Street Food Market"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1559847844-5315695dadae?w=200&q=70" data-url="https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=800&q=80" title="Indian Food Spread"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=200&q=70" data-url="https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=800&q=80" title="Dosa / South Indian"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=200&q=70" data-url="https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&w=800&q=80" title="Biryani / Feast"/>
+              </div>
+              <!-- Venue / General -->
+              <div class="img-group-label">🏛 Venue / General</div>
+              <div class="img-row">
+                <img class="pick-img" src="https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=200&q=70" data-url="https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=800&q=80" title="Conference / Summit"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=200&q=70" data-url="https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80" title="Festival Crowd"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=200&q=70" data-url="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80" title="Food Spread"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=200&q=70" data-url="https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?auto=format&fit=crop&w=800&q=80" title="Outdoor Festival"/>
+                <img class="pick-img" src="https://images.unsplash.com/photo-1496337589254-7e19d01cec44?w=200&q=70" data-url="https://images.unsplash.com/photo-1496337589254-7e19d01cec44?auto=format&fit=crop&w=800&q=80" title="Stage / Theatre"/>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div>
@@ -338,5 +417,36 @@
   </div>
 
 </div>
+<script>
+  const input   = document.getElementById('imageInput');
+  const preview = document.getElementById('imagePreview');
+  const wrap    = document.getElementById('imagePreviewWrap');
+
+  // Clicking a library image fills the URL and highlights selection
+  document.querySelectorAll('.pick-img').forEach(img => {
+    img.addEventListener('click', () => {
+      document.querySelectorAll('.pick-img').forEach(i => i.classList.remove('selected'));
+      img.classList.add('selected');
+      input.value = img.dataset.url;
+      preview.src = img.dataset.url;
+      wrap.style.display = 'block';
+    });
+  });
+
+  // Typing / pasting a URL shows the preview
+  input.addEventListener('input', () => {
+    const val = input.value.trim();
+    if (val.startsWith('http')) {
+      preview.src = val;
+      wrap.style.display = 'block';
+      document.querySelectorAll('.pick-img').forEach(i => i.classList.remove('selected'));
+    } else {
+      wrap.style.display = 'none';
+    }
+  });
+
+  // Hide preview on broken image
+  preview.addEventListener('error', () => { wrap.style.display = 'none'; });
+</script>
 </body>
 </html>
