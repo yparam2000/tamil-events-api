@@ -56,6 +56,84 @@ def deduplicate(events):
             unique.append(e)
     return unique
 
+def friendly_time(raw_time):
+    if not raw_time:
+        return ""
+    try:
+        from datetime import datetime
+        t = datetime.strptime(raw_time, "%H:%M")
+        return t.strftime("%-I:%M %p")
+    except Exception:
+        return raw_time
+
+def display_time(start_time, end_time):
+    if start_time and end_time:
+        return f"{start_time} - {end_time}"
+    return start_time or end_time or ""
+
+def parse_locations(form):
+    primary = {
+        "location": form.get("location", "").strip(),
+        "address":  form.get("address", "").strip(),
+        "city":     form.get("city", "").strip(),
+        "country":  form.get("country", "").strip(),
+    }
+
+    locations = []
+    if any(primary.values()):
+        locations.append(primary)
+
+    for line in form.get("additional_locations", "").splitlines():
+        parts = [p.strip() for p in line.split("|")]
+        if not any(parts):
+            continue
+        while len(parts) < 4:
+            parts.append("")
+        locations.append({
+            "location": parts[0],
+            "address":  parts[1],
+            "city":     parts[2],
+            "country":  parts[3],
+        })
+
+    return locations
+
+def event_from_form(form, event_id=None):
+    locations = parse_locations(form)
+    primary = locations[0] if locations else {
+        "location": "",
+        "address": "",
+        "city": "",
+        "country": "",
+    }
+    start_time_raw = form.get("start_time") or form.get("time", "")
+    end_time_raw   = form.get("end_time", "")
+    start_time     = friendly_time(start_time_raw)
+    end_time       = friendly_time(end_time_raw)
+
+    return {
+        "id":             event_id or str(uuid.uuid4()),
+        "title":          form.get("title", ""),
+        "description":    form.get("description", ""),
+        "date":           form.get("date", ""),
+        "time":           display_time(start_time, end_time),
+        "start_time":     start_time,
+        "end_time":       end_time,
+        "start_time_raw": start_time_raw,
+        "end_time_raw":   end_time_raw,
+        "city":           primary.get("city", ""),
+        "country":        primary.get("country", ""),
+        "location":       primary.get("location", ""),
+        "address":        primary.get("address", ""),
+        "locations":      locations,
+        "image":          form.get("image", ""),
+        "url":            form.get("url", ""),
+        "category":       form.get("category", "Cultural"),
+        "source":         "admin",
+        "is_free":        form.get("is_free") == "true",
+        "organizer":      form.get("organizer", ""),
+    }
+
 
 # ── Public API (used by iOS app) ──────────────────────────────────────────────
 
@@ -170,38 +248,29 @@ def admin_add():
     if key != ADMIN_KEY:
         abort(401)
 
-    # Convert time from HH:MM to "HH:MM AM/PM"
-    raw_time = request.form.get("time", "")
-    try:
-        from datetime import datetime
-        t = datetime.strptime(raw_time, "%H:%M")
-        friendly_time = t.strftime("%-I:%M %p")
-    except Exception:
-        friendly_time = raw_time
-
-    new_event = {
-        "id":          str(uuid.uuid4()),
-        "title":       request.form.get("title", ""),
-        "description": request.form.get("description", ""),
-        "date":        request.form.get("date", ""),
-        "time":        friendly_time,
-        "city":        request.form.get("city", ""),
-        "country":     request.form.get("country", ""),
-        "location":    request.form.get("location", ""),
-        "address":     request.form.get("address", ""),
-        "image":       request.form.get("image", ""),
-        "url":         request.form.get("url", ""),
-        "category":    request.form.get("category", "Cultural"),
-        "source":      "admin",
-        "is_free":     request.form.get("is_free") == "true",
-        "organizer":   request.form.get("organizer", ""),
-    }
-
     events = load_admin_events()
-    events.append(new_event)
+    events.append(event_from_form(request.form))
     save_admin_events(events)
 
     return redirect(f"/admin?key={key}&msg=Event+added+successfully!")
+
+
+@app.route("/admin/edit/<event_id>", methods=["POST"])
+def admin_edit(event_id):
+    key = request.form.get("admin_key", "")
+    if key != ADMIN_KEY:
+        abort(401)
+
+    events = load_admin_events()
+    for idx, event in enumerate(events):
+        if event.get("id") == event_id:
+            updated = event_from_form(request.form, event_id=event_id)
+            updated["source"] = event.get("source", "admin")
+            events[idx] = updated
+            save_admin_events(events)
+            return redirect(f"/admin?key={key}&msg=Event+updated.")
+
+    abort(404)
 
 
 @app.route("/admin/delete/<event_id>", methods=["POST"])
