@@ -1,6 +1,7 @@
 import os
 import requests
 from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
@@ -129,7 +130,7 @@ def _allevents_city(city: str) -> list[dict]:
         return []
     url = f"https://allevents.in/{slug}/tamil"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=14)
+        resp = requests.get(url, headers=HEADERS, timeout=8)
         if resp.status_code != 200:
             return []
         soup    = BeautifulSoup(resp.text, "html.parser")
@@ -159,42 +160,41 @@ def _eventbrite_city(city: str) -> list[dict]:
     slug = EVENTBRITE_SLUGS.get(city)
     if not slug:
         return []
-    results = []
-    seen    = set()
-    for kw in ["tamil", "bharatanatyam", "carnatic"]:
-        url = f"https://www.eventbrite.com/d/{slug}/{kw}--events/"
-        try:
-            resp = requests.get(url, headers=HEADERS, timeout=14)
-            if resp.status_code != 200:
+    url = f"https://www.eventbrite.com/d/{slug}/tamil--events/"
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=8)
+        if resp.status_code != 200:
+            return []
+        soup    = BeautifulSoup(resp.text, "html.parser")
+        results = []
+        seen    = set()
+        for el in soup.select("h3.eds-event-card__formatted-name--is-clamped, "
+                              "h3.Typography_root__487rx, "
+                              "div[data-testid='event-card'] h3, "
+                              "article h3, .event-title")[:8]:
+            title = el.get_text(strip=True)
+            if len(title) < 8 or title.lower() in seen:
                 continue
-            soup = BeautifulSoup(resp.text, "html.parser")
-            for el in soup.select("h3.eds-event-card__formatted-name--is-clamped, "
-                                  "h3.Typography_root__487rx, "
-                                  "div[data-testid='event-card'] h3, "
-                                  "article h3, .event-title")[:6]:
-                title = el.get_text(strip=True)
-                if len(title) < 8 or title.lower() in seen:
-                    continue
-                seen.add(title.lower())
-                parent = el.find_parent("a") or el.find_parent("article")
-                href   = parent.get("href", url) if parent else url
-                if href and not href.startswith("http"):
-                    href = "https://www.eventbrite.com" + href
-                results.append({
-                    "title":   title,
-                    "url":     href or url,
-                    "snippet": "",
-                    "city":    city,
-                    "source":  "Eventbrite",
-                })
-        except Exception:
-            continue
-    return results
+            seen.add(title.lower())
+            parent = el.find_parent("a") or el.find_parent("article")
+            href   = parent.get("href", url) if parent else url
+            if href and not href.startswith("http"):
+                href = "https://www.eventbrite.com" + href
+            results.append({
+                "title":   title,
+                "url":     href or url,
+                "snippet": "",
+                "city":    city,
+                "source":  "Eventbrite",
+            })
+        return results
+    except Exception:
+        return []
 
 
 def _tamilculture_ca() -> list[dict]:
     try:
-        resp = requests.get("https://www.tamilculture.ca/events", headers=HEADERS, timeout=14)
+        resp = requests.get("https://www.tamilculture.ca/events", headers=HEADERS, timeout=8)
         if resp.status_code != 200:
             return []
         soup    = BeautifulSoup(resp.text, "html.parser")
@@ -220,7 +220,7 @@ def _tamilculture_ca() -> list[dict]:
 
 def _tamilevents_uk() -> list[dict]:
     try:
-        resp = requests.get("https://www.tamilevents.co.uk", headers=HEADERS, timeout=14)
+        resp = requests.get("https://www.tamilevents.co.uk", headers=HEADERS, timeout=8)
         if resp.status_code != 200:
             return []
         soup    = BeautifulSoup(resp.text, "html.parser")
@@ -244,39 +244,52 @@ def _tamilevents_uk() -> list[dict]:
         return []
 
 
-# ── Gather all events ──────────────────────────────────────────────────────────
+# ── Gather all events (parallel) ──────────────────────────────────────────────
 
 def gather_events() -> list[dict]:
+    # Build a list of (callable, args) tasks to run in parallel
+    tasks = []
+
+    # Search engine — 1 query per city (keep request count low)
+    q_template = SEARCH_QUERIES[0]   # "Tamil events {city} 2026"
+    for city in CITIES:
+        q = q_template.format(city=city)
+        if SERPER_API_KEY:
+            tasks.append((_serper_search, (q, city)))
+        else:
+            tasks.append((_ddg_search, (q, city)))
+
+    # AllEvents.in per city
+    for city in CITIES:
+        tasks.append((_allevents_city, (city,)))
+
+    # Eventbrite per city
+    for city in CITIES:
+        tasks.append((_eventbrite_city, (city,)))
+
+    # Tamil-specific sites
+    tasks.append((_tamilculture_ca, ()))
+    tasks.append((_tamilevents_uk,  ()))
+
+    # Run all tasks in parallel, cap total time at 20 seconds
+    all_results: list[list[dict]] = []
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        futures = {pool.submit(fn, *args): fn for fn, args in tasks}
+        for future in as_completed(futures, timeout=20):
+            try:
+                all_results.append(future.result())
+            except Exception:
+                pass
+
+    # Deduplicate and return
     found = []
     seen  = set()
-
-    def _add(items):
-        for r in items:
+    for batch in all_results:
+        for r in batch:
             key = r["title"].lower()[:60]
             if key not in seen:
                 seen.add(key)
                 found.append(r)
-
-    # 1. Search engines — per city
-    for city in CITIES:
-        for q_template in SEARCH_QUERIES[:2]:   # 2 queries per city to keep it fast
-            q = q_template.format(city=city)
-            if SERPER_API_KEY:
-                _add(_serper_search(q, city))
-            else:
-                _add(_ddg_search(q, city))
-
-    # 2. AllEvents.in — great South Asian coverage
-    for city in CITIES:
-        _add(_allevents_city(city))
-
-    # 3. Eventbrite per city
-    for city in CITIES:
-        _add(_eventbrite_city(city))
-
-    # 4. Tamil-specific sites
-    _add(_tamilculture_ca())
-    _add(_tamilevents_uk())
 
     return found[:60]
 
@@ -305,7 +318,7 @@ CITY_FLAGS = {
 
 
 def _build_html(events: list[dict], admin_url: str) -> str:
-    today = datetime.now().strftime("%B %-d, %Y")
+    today = datetime.now().strftime("%B %d, %Y").lstrip("0").replace(" 0", " ")
     admin = f"https://{admin_url}/admin?key={ADMIN_KEY}"
 
     # Group by city
@@ -425,9 +438,12 @@ def send_digest() -> tuple[bool, str]:
         return False, "RESEND_API_KEY not set in environment variables"
 
     admin_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", "web-production-13ce5.up.railway.app")
-    events    = gather_events()
-    today     = datetime.now().strftime("%B %-d")
-    subject   = f"🎭 Tamil Events Digest — {today} ({len(events)} events found)"
+    try:
+        events = gather_events()
+    except Exception:
+        events = []
+    today   = datetime.now().strftime("%B %d").lstrip("0").replace(" 0", " ")
+    subject = f"🎭 Tamil Events Digest — {today} ({len(events)} events found)"
 
     try:
         resp = requests.post(
